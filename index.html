@@ -3,6 +3,43 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <script id="entry-script">/* Run in <head>, before the browser can find an incoming fragment target. */
+(() => {
+  'use strict';
+  const entries = window.performance && typeof window.performance.getEntriesByType === 'function'
+    ? window.performance.getEntriesByType('navigation') : [];
+  // Returning to this page with Back/Forward should preserve the reader's place.
+  if (entries[0] && entries[0].type === 'back_forward') return;
+
+  const previousRestoration = history.scrollRestoration;
+  try {
+    // Keep the existing QR URL usable, while presenting the top of the page on a new visit.
+    if (location.hash) history.replaceState(history.state, '', location.pathname + location.search);
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+  } catch { /* Native navigation still works when the viewer restricts History access. */ }
+
+  let interacted = false;
+  const markInteraction = () => { interacted = true; };
+  const inputEvents = ['pointerdown', 'keydown', 'touchstart', 'wheel'];
+  inputEvents.forEach(type => document.addEventListener(type, markInteraction, {once:true, passive:true}));
+  window.addEventListener('hashchange', markInteraction, {once:true});
+  window.addEventListener('pageshow', event => {
+    if (!event.persisted && !interacted && !location.hash) {
+      const root = document.documentElement;
+      const previousBehavior = root.style.scrollBehavior;
+      root.style.scrollBehavior = 'auto';
+      window.scrollTo(0, 0);
+      root.style.scrollBehavior = previousBehavior;
+    }
+    inputEvents.forEach(type => document.removeEventListener(type, markInteraction));
+    window.removeEventListener('hashchange', markInteraction);
+    // Let initial scroll restoration finish before restoring normal Back/Forward behavior.
+    if (previousRestoration) window.setTimeout(() => {
+      history.scrollRestoration = previousRestoration;
+    }, 0);
+  }, {once:true});
+})();
+</script>
   <meta name="theme-color" content="#344d5d">
   <meta name="color-scheme" content="light">
   <meta name="description" content="Юлий Семичов — натяжные потолки, остекление, строительные работы и ремонт техники. Подробнее об услугах, подготовке к разговору и порядке обсуждения вашей задачи.">
@@ -30,6 +67,10 @@
 @media(max-width:359px){.call-number{font-size:18px}.call-heading h2{font-size:26px}.request-actions{grid-template-columns:1fr}.request-actions .text-button:last-child{grid-column:auto}}
 @media print{.mobile-navigation,.hero-save,.contact-actions,.request-section,.call-sheet{display:none!important}}
 .call-heading .icon-button{display:grid;place-items:center;background:transparent;border:1px solid #b5c1c4;border-radius:50%;color:var(--ink);flex-shrink:0}.call-heading .icon-button svg{width:18px;height:18px}
+
+/* Revision 3: email is the primary request action. */
+.request-actions .email-request{flex-basis:100%;width:100%;margin-bottom:3px}.request-actions .email-request[aria-disabled=true]{opacity:.45;cursor:default;transform:none}.request-recipient{margin-top:19px;color:var(--muted);font-size:13px;line-height:1.75}.request-recipient a{color:var(--ink);text-decoration:underline;text-underline-offset:4px;overflow-wrap:anywhere;padding-block:5px;display:inline-block}.request-recipient a:hover{color:var(--copper-dark)}
+@media(max-width:640px){.request-actions .email-request{grid-column:1/-1;font-size:15px;padding:15px 12px;min-height:52px}.request-recipient{font-size:13px}}
 </style>
 </head>
 <body id="top">
@@ -44,6 +85,7 @@
     <symbol id="i-phone" viewBox="0 0 24 24"><path d="m5 3 4 4-2 3c1.6 3.1 3.9 5.4 7 7l3-2 4 4-2 2C10 23 1 14 3 5l2-2Z"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/></symbol>
     <symbol id="i-chat" viewBox="0 0 24 24"><path d="M5 18 3 22v-6a9 9 0 1 1 4 4"/><path d="M7 9h10M7 13h6"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
   </defs></svg>
 
@@ -208,7 +250,7 @@
           <p class="eyebrow">СООБЩЕНИЕ МАСТЕРУ</p>
           <h2 id="request-title" tabindex="-1">Ваша задача.<br>Своими словами.</h2>
           <p>Замените подсказки в квадратных скобках своими данными. Лишние строки можно удалить.</p>
-          <ol class="request-steps"><li>Заполните короткий текст.</li><li>Скопируйте его или нажмите «Поделиться».</li><li>Отправьте мастеру удобным способом.</li></ol>
+          <ol class="request-steps"><li>Заполните короткий текст.</li><li>Нажмите «Отправить на почту».</li><li>Проверьте готовое письмо и подтвердите отправку.</li></ol>
           <a href="#call-options" class="text-button">Проще обсудить по телефону <svg aria-hidden="true"><use href="#i-phone"/></svg></a>
         </div>
         <form id="request-form" class="request-card">
@@ -223,13 +265,15 @@
 Удобные сроки: [укажите]
 Подскажите, пожалуйста, сможете ли помочь?</textarea>
           <div class="request-actions" id="request-actions" hidden>
-            <button class="button primary" type="button" id="copy-request">Скопировать <svg aria-hidden="true"><use href="#i-copy"/></svg></button>
+            <a class="button primary email-request" id="email-request" href="mailto:yuly.semichov@yandex.ru" data-email="yuly.semichov@yandex.ru">Отправить на почту <svg aria-hidden="true"><use href="#i-mail"/></svg></a>
+            <button class="button quiet-dark" type="button" id="copy-request">Скопировать <svg aria-hidden="true"><use href="#i-copy"/></svg></button>
             <button class="button quiet-dark" type="button" id="share-request" hidden>Поделиться <svg aria-hidden="true"><use href="#i-arrow-up"/></svg></button>
             <button class="text-button" type="button" id="download-request">Скачать текст</button>
           </div>
           <p class="request-feedback" id="request-feedback" role="status" aria-live="polite"></p>
-          <p class="manual-copy" id="manual-copy">Чтобы скопировать текст, нажмите и удерживайте его, затем выберите «Выбрать всё» и «Скопировать».</p>
-          <p class="form-footnote">Вы сами выбираете получателя и подтверждаете отправку. Фотографии можно прикрепить в приложении, через которое будете писать.</p>
+          <p class="request-recipient">Получатель — Юлий Семичов<br><a href="mailto:yuly.semichov@yandex.ru">yuly.semichov@yandex.ru</a></p>
+          <p class="manual-copy" id="manual-copy">Нажмите и удерживайте текст, выберите «Выбрать всё» и «Скопировать». Затем нажмите на адрес почты выше и вставьте текст в письмо.</p>
+          <p class="form-footnote">Откроется почтовое приложение с адресом Юлия, темой и текстом обращения. Фотографии можно прикрепить уже в письме. Для отправки нажмите «Отправить» в почтовом приложении.</p>
         </form>
       </div>
     </section>
@@ -246,7 +290,7 @@
       <a class="text-button" href="contact.vcf" type="text/vcard">Добавить контакт с обоими номерами <svg aria-hidden="true"><use href="#i-download"/></svg></a>
     </div>
   </section>
-  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "Person", "name": "Юлий Семичов", "knowsAbout": ["Натяжные потолки", "Остекление", "Строительные работы", "Ремонт техники"], "telephone": ["+79006461058", "+79533685158"]}</script>
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "Person", "name": "Юлий Семичов", "knowsAbout": ["Натяжные потолки", "Остекление", "Строительные работы", "Ремонт техники"], "telephone": ["+79006461058", "+79533685158"], "email": "yuly.semichov@yandex.ru"}</script>
   <script>/* Progressive enhancement: navigation, phone choice and contact file work without this script. */
 (() => {
   'use strict';
@@ -372,10 +416,33 @@
   const copy = $('#copy-request');
   const download = $('#download-request');
   const share = $('#share-request');
+  const email = $('#email-request');
+  const emailBase = 'mailto:' + email.dataset.email;
+  function updateEmailLink() {
+    const empty = !output.value.trim();
+    email.setAttribute('aria-disabled', String(empty));
+    if (empty) { email.removeAttribute('href'); return; }
+    const subject = 'Заявка: ' + currentService;
+    // RFC 6068: UTF-8 percent encoding, with CRLF in the message body.
+    const body = output.value.replace(/\r\n|\r|\n/g, '\r\n');
+    email.href = emailBase + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+  }
   function updateActions() {
     const empty = !output.value.trim();
     [copy, download, share].forEach(button => { button.disabled = empty; });
+    updateEmailLink();
   }
+  email.addEventListener('click', event => {
+    updateEmailLink();
+    if (!output.value.trim()) {
+      event.preventDefault();
+      feedback.textContent = 'Напишите, пожалуйста, что нужно сделать.';
+      output.focus({preventScroll:true});
+      return;
+    }
+    // Follow the native mailto link in the same user gesture; no message is sent by the site.
+    feedback.textContent = 'Проверьте письмо в почтовом приложении и нажмите «Отправить».';
+  });
   output.addEventListener('input', () => { feedback.textContent = ''; updateActions(); });
   async function copyMessage() {
     let copied = false;
